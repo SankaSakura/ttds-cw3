@@ -4,6 +4,7 @@ import math
 
 from ..storage.index_store import IndexStore
 
+
 def bm25_scores(query_terms: List[str], index: IndexStore, k1: float = 1.2, b: float = 0.75) -> Dict[str, float]:
     # Compute BM25 over in-memory postings
     N = max(1, len(index.doc_len))
