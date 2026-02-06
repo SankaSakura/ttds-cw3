@@ -1,45 +1,52 @@
-from __future__ import annotations
-from typing import Dict, List, Tuple, Optional
-from pathlib import Path
-import json
-import time
+# 文件路径: storage/index_store.py
 
-from ..config import INDEX_DIR
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple
+import pickle
+import os
 
-Postings = Dict[str, List[Tuple[str, int]]]  # term -> [(doc_id, tf)]
-DocLen = Dict[str, int]
 
+@dataclass
 class IndexStore:
-    """Demo index store:
-    - Keeps inverted index + doc lengths in memory
-    - Can save/load to data/index/index.json for persistence
+    """
+    索引数据结构
     """
 
-    def __init__(self, index_path: Optional[Path] = None):
-        self.index_path = index_path or (INDEX_DIR / "index.json")
-        self.index_path.parent.mkdir(parents=True, exist_ok=True)
+    # 1. 倒排表
+    # Term -> [(Internal_DocID, Frequency)]
+    postings: Dict[str, List[Tuple[int, int]]] = field(default_factory=dict)
 
-        self.postings: Postings = {}
-        self.doc_len: DocLen = {}
-        self.index_version: str = "dev-0"
+    # 2. 文档长度
+    # Internal_DocID -> Length
+    doc_len: Dict[int, int] = field(default_factory=dict)
 
-    def save(self) -> None:
-        payload = {
-            "index_version": self.index_version,
-            "doc_len": self.doc_len,
-            "postings": {t: v for t, v in self.postings.items()},
-        }
-        with self.index_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f)
+    # 3. 位置索引
+    # Term -> {Internal_DocID: [pos1, pos2, ...]}
+    positions: Dict[str, Dict[int, List[int]]] = field(default_factory=dict)
 
-    def load_if_exists(self) -> None:
-        if not self.index_path.exists():
-            return
-        with self.index_path.open("r", encoding="utf-8") as f:
-            payload = json.load(f)
-        self.index_version = payload.get("index_version", "dev-0")
-        self.doc_len = {k: int(v) for k, v in payload.get("doc_len", {}).items()}
-        self.postings = {t: [(doc, int(tf)) for doc, tf in lst] for t, lst in payload.get("postings", {}).items()}
+    # 4. ID 映射
+    doc_id_map: Dict[str, int] = field(default_factory=dict)
+    reverse_doc_id_map: Dict[int, str] = field(default_factory=dict)
 
-    def bump_version(self) -> None:
-        self.index_version = f"dev-{int(time.time())}"
+    # 5. 文档元数据
+    doc_metadata: Dict[int, dict] = field(default_factory=dict)
+
+    # =========================
+    # 保存
+    # =========================
+    def save_to_disk(self, filepath: str):
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+        with open(filepath, "wb") as f:
+            pickle.dump(self, f)
+
+    # =========================
+    # 加载
+    # =========================
+    @classmethod
+    def load_from_disk(cls, filepath: str) -> "IndexStore":
+        if not os.path.exists(filepath):
+            return cls()
+
+        with open(filepath, "rb") as f:
+            return pickle.load(f)
