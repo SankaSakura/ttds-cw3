@@ -150,6 +150,9 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
         返回：
             搜索响应
     """
+    # 调试
+    print("REAL parse_query:", parse_query)
+    print("REAL bm25_scores:", bm25_scores)
 
     # BM25
     with timer_ms() as took:
@@ -249,10 +252,11 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
                 lang=doc.lang
             ))
 
+    results.reverse()
     # 返回结果
     return SearchResponse(
         query=req.query,
         took_ms=took(),
         total_hits=len(scores),
-        results=results.reverse()
+        results=results
     )
