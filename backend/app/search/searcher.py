@@ -150,13 +150,12 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
         返回：
             搜索响应
     """
-    # 调试
-    print("REAL parse_query:", parse_query)
-    print("REAL bm25_scores:", bm25_scores)
+    # NOTE: keep search() side-effect free; avoid noisy prints in demo/TA runs.
 
     # BM25
     with timer_ms() as took:
         # 1. 使用parse_query执行查询解析，获取匹配的文档
+        # `parse_query` returns internal doc ids (ints) that correspond to IndexStore.doc_id_map.
         matched_docs = parse_query(req.query, index)
 
         # 2. 如果没有匹配的文档，直接返回空结果
@@ -181,7 +180,10 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
 
             if top_docs:
                 # 扩展查询词
-                expanded_terms = prf_expand(req.query, [doc_id for doc_id, _ in top_docs], store)
+                # PRF works with external doc_id strings.
+                top_ext_ids = [index.reverse_doc_id_map.get(internal_id) for internal_id, _ in top_docs]
+                top_ext_ids = [x for x in top_ext_ids if x is not None]
+                expanded_terms = prf_expand(req.query, top_ext_ids, store)
                 if expanded_terms:
                     # 合并原始词项和扩展词项
                     all_terms = query_terms + expanded_terms
@@ -195,8 +197,11 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
 
         # 6. 排序结果:使用小根堆进行排序
         heap = []  # 小根堆，存储(-score, doc_id)，这样大得分会排在前面
-        for doc_id, score in scores.items():
-            doc = store.get(doc_id)
+        for internal_id, score in scores.items():
+            ext_id = index.reverse_doc_id_map.get(internal_id)
+            if ext_id is None:
+                continue
+            doc = store.get(ext_id)
             if not doc:
                 continue
 
@@ -211,11 +216,11 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
                 # 条件2：如果得分相等，doc_id必须大于上次的最大doc_id（用于稳定排序）
                 if score > req.last_min_bm25_score:
                     continue  # 得分太高，这是之前页的结果
-                elif score == req.last_min_bm25_score and doc_id <= req.last_max_rerank_id:
+                elif score == req.last_min_bm25_score and ext_id <= req.last_max_rerank_id:
                     continue  # 得分相同但doc_id不够大，这也是之前页的结果
             # 使用负分构建小根堆（因为heapq默认是最小堆）
             # 我们想要保持最大的K个得分，所以用小根堆来踢掉最小的
-            heap_item = (-score, doc_id)
+            heap_item = (-score, ext_id)
 
             if len(heap) < req.top_k:
                 heapq.heappush(heap, heap_item)
@@ -231,8 +236,8 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
         # 7. 过滤和格式化结果
         results: List[SearchResult] = []
         while heap:
-            neg_score, doc_id = heapq.heappop(heap)
-            doc = store.get(doc_id)
+            neg_score, ext_id = heapq.heappop(heap)
+            doc = store.get(ext_id)
 
             # 为摘要生成提取词项（使用原始查询）
             if _is_simple_query(req.query):
@@ -242,11 +247,12 @@ def search(req: SearchRequest, store: DocumentStore, index: IndexStore, prf_expa
 
             snippet = _make_snippet(doc.body, snippet_terms)
 
+            score = float(-neg_score)
             results.append(SearchResult(
                 doc_id=doc.doc_id,
                 title=doc.title,
                 snippet=snippet,
-                score=float(score),
+                score=score,
                 url=doc.url,
                 timestamp=doc.timestamp,
                 lang=doc.lang

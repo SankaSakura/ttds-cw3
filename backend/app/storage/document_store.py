@@ -1,50 +1,76 @@
-# 文件路径: indexing/tokenizer.py
+from __future__ import annotations
 
-import re
-from typing import List
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Optional
+import os
+import pickle
 
-import nltk
-from nltk.stem import PorterStemmer
-from nltk.corpus import stopwords
-
-
-# =========================
-# 确保停用词已下载
-# =========================
-try:·
-    nltk.data.find("corpora/stopwords")
-except LookupError:
-    nltk.download("stopwords")
-
-# =========================
-# 全局对象（提升性能）
-# =========================
-_stemmer = PorterStemmer()
-_stop_words = set(stopwords.words("english"))
+from ..config import DATA_DIR
+from ..schemas import Document
 
 
-# =========================
-# 英文分词函数
-# =========================
-def tokenize_en(text: str) -> List[str]:
-    """
-    标准分词流程：
-    1. 小写化 + 正则分词
-    2. 去停用词
-    3. 词干提取 (stemming)
+@dataclass
+class DocumentStore:
+    """A tiny persistent document store.
+
+    Keys are external `doc_id` (string) to keep API consistent.
     """
 
-    if not text:
-        return []
+    docs: Dict[str, Document] = field(default_factory=dict)
+    _filepath: str = field(default_factory=lambda: str(DATA_DIR / "docs.pkl"))
 
-    # 只保留字母和数字
-    tokens = re.findall(r"[a-z0-9]+", text.lower())
+    def __len__(self) -> int:
+        return len(self.docs)
 
-    valid_tokens = []
+    def get(self, doc_id: str) -> Optional[Document]:
+        return self.docs.get(doc_id)
 
-    for t in tokens:
-        if t not in _stop_words and len(t) > 1:
-            stemmed = _stemmer.stem(t)
-            valid_tokens.append(stemmed)
+    def all(self) -> List[Document]:
+        # Keep deterministic order for reproducibility
+        return list(self.docs.values())
 
-    return valid_tokens
+    def add_documents(self, docs: Iterable[Document], persist: bool = False) -> int:
+        """Add documents; de-duplicate by `doc_id`.
+
+        Returns the number of newly ingested documents.
+        """
+        added = 0
+        for d in docs:
+            if d.doc_id in self.docs:
+                continue
+            self.docs[d.doc_id] = d
+            added += 1
+
+        if persist and added:
+            self.save_to_disk(self._filepath)
+        return added
+
+    # -------------------------
+    # persistence
+    # -------------------------
+    def save_to_disk(self, filepath: Optional[str] = None) -> None:
+        fp = filepath or self._filepath
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        with open(fp, "wb") as f:
+            pickle.dump(self, f)
+
+    @classmethod
+    def load_from_disk(cls, filepath: str) -> "DocumentStore":
+        if not os.path.exists(filepath):
+            return cls()
+        with open(filepath, "rb") as f:
+            obj = pickle.load(f)
+        # Backward/forward compatibility: accept either a DocumentStore instance
+        # or a raw dict (older code).
+        if isinstance(obj, cls):
+            return obj
+        store = cls()
+        if isinstance(obj, dict):
+            store.docs = obj
+        return store
+
+    def load_if_exists(self) -> None:
+        if not os.path.exists(self._filepath):
+            return
+        loaded = self.load_from_disk(self._filepath)
+        self.docs = loaded.docs

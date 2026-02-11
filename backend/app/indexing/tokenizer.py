@@ -3,24 +3,38 @@
 import re
 from typing import List
 
-import nltk
 from nltk.stem import PorterStemmer
-from nltk.corpus import stopwords
+
+try:
+    import nltk
+    from nltk.corpus import stopwords
+except Exception:  # pragma: no cover
+    nltk = None
+    stopwords = None
 
 
 # =========================
-# 确保停用词已下载
+# 停用词：优先使用 nltk（如果环境里已安装/已下载），否则使用最小内置表。
+# 注意：不要在 import 阶段自动 nltk.download()（demo/离线环境会翻车）。
 # =========================
-try:·
-    nltk.data.find("corpora/stopwords")
-except LookupError:
-    nltk.download("stopwords")
+
+_FALLBACK_STOP = {
+    "the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with",
+    "is", "are", "was", "were", "be", "as", "by", "at", "from", "that",
+    "this", "it", "its", "into", "over", "under", "we", "you", "they",
+}
 
 # =========================
 # 全局对象（提升性能）
 # =========================
 _stemmer = PorterStemmer()
-_stop_words = set(stopwords.words("english"))
+if stopwords is not None and nltk is not None:
+    try:
+        _stop_words = set(stopwords.words("english"))
+    except Exception:
+        _stop_words = set(_FALLBACK_STOP)
+else:
+    _stop_words = set(_FALLBACK_STOP)
 
 
 # =========================
