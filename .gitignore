@@ -20,6 +20,8 @@ env/
 # ===== Runtime data =====
 data/processed/
 data/index/
+*.jsonl
+*.pkl
 
 # Ingestion state
 ingest_state_*.json
