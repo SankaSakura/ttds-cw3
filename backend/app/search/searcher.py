@@ -24,17 +24,31 @@ def _make_snippet(text: str, terms: List[str], max_len: int = 180) -> str:
 
     lower = text.lower()
     pos = -1
+
     for t in terms:
         p = lower.find(t.lower())
         if p != -1:
             pos = p
             break
-
     if pos == -1:
-        snippet = text[:max_len]
+        start = 0
     else:
         start = max(0, pos - 60)
-        snippet = text[start:start + max_len]
+
+    end = start + max_len
+
+    # 防止越界
+    end = min(len(text), end)
+
+    # 🔹 向前扩展到单词边界
+    while start > 0 and text[start].isalnum():
+        start -= 1
+
+    # 🔹 向后扩展到单词边界
+    while end < len(text) and text[end - 1].isalnum():
+        end += 1
+
+    snippet = text[start:end]
 
     return snippet.replace("\n", " ").strip()
 

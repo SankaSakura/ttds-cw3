@@ -270,7 +270,12 @@ class QueryParser:
             ValueError: 查询语法错误
         """
         tokens = self._tokenize_query(query)
-        return self._parse_expression(tokens)
+        ast = self._parse_expression(tokens)
+
+        if tokens:
+            raise ValueError("Unexpected tokens remaining")
+
+        return ast
 
     def _tokenize_query(self, query: str) -> List[Tuple[str, str]]:
         """
@@ -328,12 +333,29 @@ class QueryParser:
 
         return node
 
+    # def _parse_and_expression(self, tokens: List[Tuple[str, str]]) -> QueryNode:
+    #     """解析AND表达式"""
+    #     node = self._parse_not_expression(tokens)
+    #
+    #     while tokens and tokens[0][0] == 'AND':
+    #         tokens.pop(0)  # 消耗AND
+    #         right = self._parse_not_expression(tokens)
+    #         node = AndNode(node, right)
+    #
+    #     return node
+
     def _parse_and_expression(self, tokens: List[Tuple[str, str]]) -> QueryNode:
-        """解析AND表达式"""
         node = self._parse_not_expression(tokens)
 
-        while tokens and tokens[0][0] == 'AND':
-            tokens.pop(0)  # 消耗AND
+        # 支持显式 AND 和 默认 AND
+        while tokens and tokens[0][0] in (
+                'AND', 'TERM', 'PHRASE', 'PROXIMITY', 'LPAREN', 'NOT'
+        ):
+            # 如果是显式 AND，消耗它
+            if tokens[0][0] == 'AND':
+                tokens.pop(0)
+
+            # 否则就是默认 AND（什么都不消耗）
             right = self._parse_not_expression(tokens)
             node = AndNode(node, right)
 
@@ -508,16 +530,3 @@ def parse_query(query: str, index: IndexStore) -> Set[str]:
         logger.error(f"Error evaluating query '{query}': {e}", exc_info=True)
         return set()
 
-
-def analyze_query(query: str) -> Dict:
-    """
-    分析查询字符串
-
-    Args:
-        query: 查询字符串
-
-    Returns:
-        查询分析结果
-    """
-    parser = QueryParser()
-    return parser.analyze_query(query)
