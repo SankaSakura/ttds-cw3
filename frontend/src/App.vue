@@ -266,7 +266,7 @@ canGoNext() {
       const pattern = terms.map(esc).join('|')
       const re = new RegExp(`(${pattern})`, 'gi')
 
-      return escapedRaw.replace(re, '<mark class="hl">$1</mark>')
+      return escapedRaw.replace(re, '<strong>$1</strong>')
     },
 
     escapeHtml(str) {
@@ -607,9 +607,4 @@ h1 { font-size: 22px; margin: 0 0 16px; }
 .usage-notes h3 { margin-top: 0; margin-bottom: 12px; font-size: 18px; font-weight: 600; color: #333; }
 .usage-notes ul { padding-left: 18px; margin: 0; }
 .usage-notes li { margin-bottom: 8px; font-size: 14px; color: #555; line-height: 1.6; }
-
-mark.hl{
-  padding: 0 2px;
-  border-radius: 4px;
-}
 </style>
